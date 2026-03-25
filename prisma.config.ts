@@ -9,5 +9,5 @@ export default defineConfig({
   datasource: {
     url: process.env["TURSO_DATABASE_URL"]!.replace("libsql://", "https://"),
     token: process.env["TURSO_AUTH_TOKEN"],
-  },
+  } as { url: string; token?: string },
 });
