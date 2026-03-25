@@ -1,0 +1,220 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// ─── USERS & DEPARTMENTS ────────────────────────────────────────
+
+model Department {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  founderId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  founder   User   @relation("FounderDepartments", fields: [founderId], references: [id])
+  members   User[] @relation("DepartmentMembers")
+
+  objectives Objective[]
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         String   @default("EMPLOYEE") // ADMIN, TEAM_LEAD, EMPLOYEE
+  departmentId String?
+  reportsToId  String?
+  avatarUrl    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  department    Department? @relation("DepartmentMembers", fields: [departmentId], references: [id])
+  reportsTo     User?       @relation("ReportsTo", fields: [reportsToId], references: [id])
+  directReports User[]      @relation("ReportsTo")
+
+  founderOf Department[] @relation("FounderDepartments")
+
+  // OKR relations
+  ownedObjectives Objective[] @relation("ObjectiveOwner")
+
+  // Review relations
+  reviewsAsEmployee Review[] @relation("ReviewEmployee")
+  reviewsAsTL       Review[] @relation("ReviewTL")
+  reviewsAsMgmt     Review[] @relation("ReviewMgmt")
+
+  // Peer feedback
+  feedbackGiven    PeerFeedback[] @relation("FeedbackFrom")
+  feedbackReceived PeerFeedback[] @relation("FeedbackTo")
+  nominationsAsEmployee PeerNomination[] @relation("NominationEmployee")
+  nominationsAsPeer     PeerNomination[] @relation("NominationPeer")
+  nominationsApproved   PeerNomination[] @relation("NominationApprover")
+
+  // Notifications
+  notifications Notification[]
+}
+
+// ─── OKR MODULE ─────────────────────────────────────────────────
+
+model OkrCycle {
+  id        String   @id @default(cuid())
+  name      String
+  quarter   Int
+  year      Int
+  startDate DateTime
+  endDate   DateTime
+  status    String   @default("ACTIVE") // DRAFT, ACTIVE, CLOSED
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  objectives Objective[]
+}
+
+model Objective {
+  id                String   @id @default(cuid())
+  title             String
+  description       String?
+  type              String   // COMPANY, DEPARTMENT, INDIVIDUAL
+  status            String   @default("ON_TRACK") // ON_TRACK, AT_RISK, BEHIND, COMPLETED
+  progress          Float    @default(0)
+  ownerId           String
+  departmentId      String?
+  cycleId           String
+  parentObjectiveId String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  owner            User          @relation("ObjectiveOwner", fields: [ownerId], references: [id])
+  department       Department?   @relation(fields: [departmentId], references: [id])
+  cycle            OkrCycle      @relation(fields: [cycleId], references: [id])
+  parentObjective  Objective?    @relation("ObjectiveHierarchy", fields: [parentObjectiveId], references: [id])
+  childObjectives  Objective[]   @relation("ObjectiveHierarchy")
+
+  keyResults KeyResult[]
+}
+
+model KeyResult {
+  id           String   @id @default(cuid())
+  title        String
+  targetValue  Float
+  currentValue Float    @default(0)
+  unit         String   @default("%")
+  progress     Float    @default(0)
+  objectiveId  String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  objective Objective @relation(fields: [objectiveId], references: [id], onDelete: Cascade)
+}
+
+// ─── PERFORMANCE REVIEW MODULE ──────────────────────────────────
+
+model ReviewCycle {
+  id        String   @id @default(cuid())
+  name      String
+  year      Int
+  startDate DateTime
+  endDate   DateTime
+  status    String   @default("DRAFT") // DRAFT, ACTIVE, CLOSED
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  reviews         Review[]
+  peerFeedbacks   PeerFeedback[]
+  peerNominations PeerNomination[]
+}
+
+model Review {
+  id             String  @id @default(cuid())
+  reviewCycleId  String
+  employeeId     String
+  tlReviewerId   String?
+  mgmtReviewerId String?
+
+  selfRating   Float?
+  selfComments String?
+  tlRating     Float?
+  tlComments   String?
+  mgmtRating   Float?
+  mgmtComments String?
+
+  finalScore Float?
+  status     String @default("NOT_STARTED") // NOT_STARTED, SELF_REVIEW, TL_REVIEW, MGMT_REVIEW, COMPLETED
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  reviewCycle  ReviewCycle @relation(fields: [reviewCycleId], references: [id])
+  employee     User        @relation("ReviewEmployee", fields: [employeeId], references: [id])
+  tlReviewer   User?       @relation("ReviewTL", fields: [tlReviewerId], references: [id])
+  mgmtReviewer User?       @relation("ReviewMgmt", fields: [mgmtReviewerId], references: [id])
+
+  competencies ReviewCompetency[]
+}
+
+model ReviewCompetency {
+  id             String @id @default(cuid())
+  reviewId       String
+  competencyName String
+  selfScore      Float?
+  tlScore        Float?
+  mgmtScore      Float?
+
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+}
+
+// ─── 360 FEEDBACK MODULE ────────────────────────────────────────
+
+model PeerNomination {
+  id            String   @id @default(cuid())
+  reviewCycleId String
+  employeeId    String
+  peerId        String
+  approvedById  String?
+  status        String   @default("PENDING") // PENDING, APPROVED, REJECTED
+  createdAt     DateTime @default(now())
+
+  reviewCycle ReviewCycle @relation(fields: [reviewCycleId], references: [id])
+  employee    User        @relation("NominationEmployee", fields: [employeeId], references: [id])
+  peer        User        @relation("NominationPeer", fields: [peerId], references: [id])
+  approvedBy  User?       @relation("NominationApprover", fields: [approvedById], references: [id])
+}
+
+model PeerFeedback {
+  id            String   @id @default(cuid())
+  reviewCycleId String
+  fromUserId    String
+  toUserId      String
+  isAnonymous   Boolean  @default(true)
+  status        String   @default("PENDING") // PENDING, COMPLETED
+  rating        Float?
+  comments      String?
+  strengths     String?
+  improvements  String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  reviewCycle ReviewCycle @relation(fields: [reviewCycleId], references: [id])
+  fromUser    User        @relation("FeedbackFrom", fields: [fromUserId], references: [id])
+  toUser      User        @relation("FeedbackTo", fields: [toUserId], references: [id])
+}
+
+// ─── NOTIFICATIONS ──────────────────────────────────────────────
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String
+  title     String
+  message   String
+  read      Boolean  @default(false)
+  link      String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
